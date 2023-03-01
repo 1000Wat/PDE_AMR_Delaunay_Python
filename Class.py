@@ -14,15 +14,27 @@ class Grid:
         self.dX0=dX0
         self.NbPoint=NbPoint
         self.co=np.zeros((np.product(NbPoint),np.size(dX0)))
+        bound=[]
         ranges=[range(NbPoint[i]) for i in range(NbPoint.size)]
         for i,xs in enumerate(it.product(*ranges)):
+            print(xs)
             coor=np.array(xs)*dX0
             self.co[i,:]=coor
+            xs_t=xs[0]
+            xs_x=xs[1]
+            if xs_t%NbPoint[0]==0 or xs_x%NbPoint[1]==0 or xs_x%NbPoint[1]==NbPoint[1]-1:
+                bound.append(i)
+        bound=np.array(bound)
+        bound=np.unique(bound)
+        self.bound=bound
+
 
     def __init__(self,F,argF) -> None:
         self.F=F
         self.argF=argF
 
+    def BoundPurge(self,Array,Coord):
+        return [Array[i] for i in Coord if i not in self.bound]
 
     def SetValueInit(self,f,arg):
         self.argdict={}
@@ -62,6 +74,7 @@ class Grid:
     def Deriv(self,arg,monoaxe,Coord=None,h=None,argdict=None):
         if argdict is None:
             argdict=self.argdict
+
         if Coord is None:
             All=True
             Coord=range(self.co.shape[0])
@@ -99,17 +112,19 @@ class Grid:
             argdict[name]=dPhidaxe
         return dPhidaxe
 
-    def DerivRecur(self,arg,axe:str,Coord=None,h=None,argdict=None):
+    def DerivRecur(self,arg,axe:str,Coord=None,h=None,argdictBase=None,argdictModif=None):
         # print(argdict)
-        if argdict is None:
-            argdict=self.argdict
-
+        argdict = self.argdict if argdictBase is None else argdictBase
         # print(arg,axe)
-        if f"{arg}_{axe}" in argdict:
+        if f"{arg}_{axe}" in argdict and argdictModif is None:
             # print("Already Done")
             return argdict[f"{arg}_{axe}"][Coord]
-        elif axe in NamesDiff:
+        elif argdictModif is not None and f"{arg}_{axe}" in argdictModif:
+            return argdictModif[f"{arg}_{axe}"][Coord]
+        elif axe in NamesDiff and argdictModif is None:
             return self.Deriv(arg,axe,Coord=Coord,h=h,argdict=argdict)
+        elif axe in NamesDiff:
+            return self.Deriv(arg,axe,Coord=Coord,h=h,argdict=argdictModif)
         axeList=axe.split("_")
         axe0=axeList[-1]
         newaxe=""
@@ -117,8 +132,17 @@ class Grid:
             newaxe+=naxe
             newaxe+="_"
         newaxe=newaxe[:-1]
-        self.DerivRecur(arg,newaxe,Coord=Coord,h=h,argdict=argdict) #DerivPrior=
-        return self.Deriv(f"{arg}_{newaxe}",axe0,Coord=Coord,h=h,argdict=argdict)
+        if argdictModif is None:
+
+            self.DerivRecur(arg,newaxe,Coord=Coord,h=h,argdictBase=argdict) #DerivPrior=
+            return self.Deriv(f"{arg}_{newaxe}",axe0,Coord=Coord,h=h,argdict=argdict)
+        
+        else:
+            ModifDerivPhi=self.DerivRecur(arg,newaxe,Coord=Coord,h=h,argdictBase=argdict,argdictModif=argdictModif)
+            argdictModif[f"{arg}_{newaxe}"]= np.copy(argdictBase[f"{arg}_{newaxe}"])
+            argdictModif[f"{arg}_{newaxe}"][Coord]=ModifDerivPhi
+            return self.Deriv(f"{arg}_{newaxe}",axe0,Coord=Coord,h=h,argdict=argdictModif)
+
 
 
 
@@ -162,7 +186,7 @@ class Grid:
                     newaxe+=naxe
                     newaxe+="_"
                 newaxe=newaxe[:-1]
-                self.DerivRecur("phi",newaxe,Coord=Coord,h=h,argdict=argdict)
+                self.DerivRecur("phi",newaxe,Coord=Coord,h=h,argdictBase=argdict)
 
 
 
@@ -192,6 +216,7 @@ class Grid:
                 
                 Coord=self.PPV(Coord)
                 # print(deg,Coord)
+            
             CoList[deg]=Coord
         for arg in self.argF:
             axeList=arg.split("_")
@@ -207,7 +232,7 @@ class Grid:
                 # print(f"phi_{newaxe}")
                 # print(Coord)
                 # print(self.argdict[f"phi_{newaxe}"][Coord])
-                DphiAxe=self.DerivRecur("phi",newaxe,Coord=Coord,argdict=argdictP)
+                DphiAxe=self.DerivRecur("phi",newaxe,Coord=Coord,argdictBase=self.argdict,argdictModif=argdictP)
                 
                 DphiAxeTot=np.copy(self.argdict[f"phi_{newaxe}"])
                 
@@ -298,19 +323,24 @@ ax=plt.axes(projection='3d')
 
 NbPoint=np.array([5,5])
 dX0=np.array([0.5,0.5])
-g=Grid(lambda phi_dt_dt,phi_dx_dx: phi_dt_dt-phi_dx_dx,argF=["phi_dt_dt","phi_dx_dx"])
+g=Grid(lambda phi_dt,phi_dx: phi_dt-phi_dx,argF=["phi_dt","phi_dx"])
 g.GeneGridUniEuclid(NbPoint,dX0)
+print(g.bound)
 # print(g.co)
-f=lambda x: x[0]**2#np.real(np.exp(1j*(-x[0]*1+x[1]*1)))#
+f=lambda x: x[0]**2+x[1]#np.real(np.exp(1j*(-x[0]*1+x[1]*1)))#
 g.SetValueInit(f,"phi")
 g.TrigGrid()
-g.GenArgDict()()
-print(g.EvaluateF())
-
+g.GenArgDict()
+# print(g.EvaluateF())
+ppv=g.PPV([18])
+print(ppv)
+ppv_purge = [i for i in ppv if i not in g.bound]
+print(ppv_purge)
 
 # print(g.DerivF([18],h=1))
-# print(g.JacobF(h=1))
-print(g.NewtonBroy(h=1e-2,NbEtape=5))
+# plt.matshow(g.JacobF(h=1))
+
+# print(g.NewtonBroy(h=1e-2,NbEtape=5))
 # x=np.array([np.array([0,0]),np.array([5,5])])
 # print(g.Interp("phi",x),f(x))
 # g.Deriv("phi","dt")
