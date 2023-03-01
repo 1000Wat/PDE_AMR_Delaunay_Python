@@ -15,6 +15,7 @@ class Grid:
         self.NbPoint=NbPoint
         self.co=np.zeros((np.product(NbPoint),np.size(dX0)))
         bound=[]
+        signal=[]
         ranges=[range(NbPoint[i]) for i in range(NbPoint.size)]
         for i,xs in enumerate(it.product(*ranges)):
             print(xs)
@@ -22,11 +23,15 @@ class Grid:
             self.co[i,:]=coor
             xs_t=xs[0]
             xs_x=xs[1]
-            if xs_t%NbPoint[0]==0 or xs_x%NbPoint[1]==0 or xs_x%NbPoint[1]==NbPoint[1]-1:
+            if xs_t%NbPoint[0]<=1  or xs_x%NbPoint[1]<=1 or xs_x%NbPoint[0]>=NbPoint[0]-2:
                 bound.append(i)
+            else:
+                signal.append(i)
         bound=np.array(bound)
-        bound=np.unique(bound)
         self.bound=bound
+        signal=np.array(signal)
+        self.signal=signal
+        
 
 
     def __init__(self,F,argF) -> None:
@@ -216,7 +221,7 @@ class Grid:
                 
                 Coord=self.PPV(Coord)
                 # print(deg,Coord)
-            
+            # Coord=[i for i in Coord if i not in g.bound]
             CoList[deg]=Coord
         for arg in self.argF:
             axeList=arg.split("_")
@@ -251,13 +256,21 @@ class Grid:
 
     def JacobF(self,h=None):
         n=self.co.shape[0]
-        J=np.zeros((n,n))
-        for co in range(n):
+        signal=[i for i in range(n) if i not in self.bound ]
+        n_signal=len(signal)
+        print(n_signal)
+        J=np.zeros((n_signal,n_signal))
+
+        for i,co in enumerate(signal):
             co=np.array([co])
-            J[co,:]=self.DerivF(co,h=h)
+            print(co)
+            Deriv=self.DerivF(co,h=h)
+            print(Deriv.shape)
+            Deriv=self.BoundPurge(Deriv,range(n))
+            J[i,:]=Deriv
         return J 
 
-    def NewtonBroy(self,h=None,NbEtape=50,Precision=1e-5):
+    def NewtonBroy(self,h=None,NbEtape=50,Precision=1e-2):
         # if Phi0 is function :
         #     self.SetValueInit(Phi0,"phi")
         # elif Phi0 is np.ndarray:
@@ -265,9 +278,11 @@ class Grid:
         # else:
         #     print("Pas le bon type de Phi0")
         #     return None
+        
         self.GenArgDict()
         F0=self.EvaluateF()
-        Fk=F0
+
+        Fk=self.BoundPurge(F0,range(self.co.shape[0]))
         if lin.norm(Fk)<Precision:
             print("Déja bon")
             return self.argdict
@@ -280,21 +295,25 @@ class Grid:
                 
                 
             else:
-                # J=self.JacobF(h=h)
-                # Jinv=lin.inv(J)
-                Jinv=Jinv+((DeltaPhi-Jinv@DeltaF)/(DeltaPhi.T@Jinv@DeltaF))@(DeltaPhi.T@Jinv)
+                J=self.JacobF(h=h)
+                Jinv=lin.inv(J)
+                # Jinv=Jinv+((DeltaPhi-Jinv@DeltaF)/(DeltaPhi.T@Jinv@DeltaF))@(DeltaPhi.T@Jinv)
             
             print(f"Etape {i}")
             print(Jinv)
             Phik=self.argdict["phi"]
-            
-            Phik1=-Jinv@Fk+Phik
+            reduced_Phik=np.array(self.BoundPurge(Phik,range(self.co.shape[0])))
+            reduced_Phik1=-Jinv@Fk+reduced_Phik
+            Phik1=np.copy(Phik)
+            Phik1[self.signal]=reduced_Phik1
             # print(Phik1)
             Fk=self.EvaluateF()
+            Fk=np.array(self.BoundPurge(Fk,range(self.co.shape[0])))
             self.argdict={"phi":Phik1}
             self.GenArgDict()
             Fk1=self.EvaluateF()
-            DeltaPhi=Phik1-Phik
+            Fk1=np.array(self.BoundPurge(Fk1,range(self.co.shape[0])))
+            DeltaPhi=reduced_Phik1-reduced_Phik
             DeltaPhi:np.ndarray
             DeltaF=Fk1-Fk
             DeltaF:np.ndarray
@@ -321,26 +340,29 @@ class Grid:
 plt.figure()
 ax=plt.axes(projection='3d')
 
-NbPoint=np.array([5,5])
+NbPoint=np.array([20,20])
 dX0=np.array([0.5,0.5])
-g=Grid(lambda phi_dt,phi_dx: phi_dt-phi_dx,argF=["phi_dt","phi_dx"])
+g=Grid(lambda phi_dt,phi: phi_dt-phi,argF=["phi_dt","phi"])
 g.GeneGridUniEuclid(NbPoint,dX0)
 print(g.bound)
 # print(g.co)
-f=lambda x: x[0]**2+x[1]#np.real(np.exp(1j*(-x[0]*1+x[1]*1)))#
+f=lambda x: np.exp(-(x[1]-7)**2/2/0.5)#*np.cos(x[0]*0.1-x[1]*0.1) #np.real(np.exp(1j*(-x[0]*1+x[1]*1)))#
 g.SetValueInit(f,"phi")
 g.TrigGrid()
 g.GenArgDict()
 # print(g.EvaluateF())
-ppv=g.PPV([18])
-print(ppv)
-ppv_purge = [i for i in ppv if i not in g.bound]
-print(ppv_purge)
+# ppv=g.PPV([18])
+# print(ppv)
+# ppv_purge = [i for i in ppv if i not in g.bound]
+# print(ppv_purge)
 
-# print(g.DerivF([18],h=1))
-# plt.matshow(g.JacobF(h=1))
+# # print(g.DerivF([18],h=1))
+# J=g.JacobF(h=1)
+# print(J)
 
-# print(g.NewtonBroy(h=1e-2,NbEtape=5))
+
+
+print(g.NewtonBroy(h=1e-5,NbEtape=1))
 # x=np.array([np.array([0,0]),np.array([5,5])])
 # print(g.Interp("phi",x),f(x))
 # g.Deriv("phi","dt")
@@ -350,15 +372,30 @@ print(ppv_purge)
 # g.DerivRecur("phi","dx_dt_dx_dt")
 # print(g.argdict.keys())
 # # print(g.argdict)
-g.PlotPhi2DScalar(ax,"phi",cmap="hot")
+# g.PlotPhi2DScalar(ax,"phi",cmap="hot")
+
+
+
+xrange=dX0[0]*np.linspace(0,NbPoint[0]-1,NbPoint[0])
+print(xrange,g.co[:,0])
+yrange=dX0[1]*np.linspace(0,NbPoint[1]-1,NbPoint[0])
+xmesh,ymesh=np.meshgrid(xrange,yrange)
+mesh_interp=lambda x,y:g.Interp("phi",np.array([[x,y]]))
+Result=np.zeros_like(xmesh)
+for i in range(xmesh.shape[0]):
+    for j in range(xmesh.shape[1]):
+        print(xmesh[i,j],ymesh[i,j])
+        Result[i,j]=mesh_interp(xmesh[i,j],ymesh[i,j])
+ax.plot_surface(xmesh,ymesh,Result,cmap="hot")
+
 # print(g.EvaluateF())
+
 # g.PlotGradient2D(ax,"phi")
 
 # c0=np.array([50])
 # test1=g.PPV(c0)
 # test2=g.PPV(test1)
 # print(test1,test2)
-
-
-
 plt.show()
+
+
