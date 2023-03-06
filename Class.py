@@ -5,7 +5,9 @@ import numpy.linalg as lin
 import scipy.interpolate as int
 import matplotlib.pyplot as plt
 import scipy.spatial as spa
-pct=0.01
+import inspect as ins
+
+pct=0.1
 NamesDiff={"dt":0,"dx":1,"dy":2,"dz":3}
 DiffNames={0:"dt",1:"dx",2:"dy",3:"dz"}
 
@@ -18,12 +20,12 @@ class Grid:
         signal=[]
         ranges=[range(NbPoint[i]) for i in range(NbPoint.size)]
         for i,xs in enumerate(it.product(*ranges)):
-            print(xs)
+            # print(xs)
             coor=np.array(xs)*dX0
             self.co[i,:]=coor
             xs_t=xs[0]
             xs_x=xs[1]
-            if xs_t%NbPoint[0]<=1  or xs_x%NbPoint[1]<=1 or xs_x%NbPoint[0]>=NbPoint[0]-2:
+            if xs_t%NbPoint[0]<=1  or xs_x%NbPoint[1]<=0 or xs_x%NbPoint[1]>=NbPoint[1]-1:
                 bound.append(i)
             else:
                 signal.append(i)
@@ -34,9 +36,10 @@ class Grid:
         
 
 
-    def __init__(self,F,argF) -> None:
+    def __init__(self,F,time_dir=False) -> None:
         self.F=F
-        self.argF=argF
+        self.argF=ins.getargspec(F)[0]
+        self.time_dir=time_dir
 
     def BoundPurge(self,Array,Coord):
         return [Array[i] for i in Coord if i not in self.bound]
@@ -92,18 +95,23 @@ class Grid:
             h=pct*self.dX0[axe]
         dx=np.zeros_like(self.co[Coord])
         dx[:,axe]=h
-        CoefPlus,CoefMoins=0.5*np.ones_like(Phi),0.5*np.ones_like(Phi)
-
         CoordPlus=self.co[Coord]+dx
+        CoordMoins=self.co[Coord]-dx
         SimplexPlus = self.trig.find_simplex(CoordPlus)
         OutsidePlus=np.where(SimplexPlus<0)
-        
 
-        CoordMoins=self.co[Coord]-dx
+
+
         SimplexMoins = self.trig.find_simplex(CoordMoins)
         OutsideMoins=np.where(SimplexMoins<0)
-        CoefPlus[OutsidePlus]=0
-        CoefPlus[OutsideMoins]=1
+        if monoaxe == "dt" and self.time_dir:
+            CoefMoins=np.ones_like(Phi)
+            CoefPlus=np.zeros_like(Phi)
+
+        else:
+            CoefPlus,CoefMoins=0.5*np.ones_like(Phi),0.5*np.ones_like(Phi)
+            CoefPlus[OutsidePlus]=0
+            CoefPlus[OutsideMoins]=1
         CoefMoins[OutsidePlus]=1
         CoefMoins[OutsideMoins]=0
 
@@ -156,6 +164,7 @@ class Grid:
         dphidt = self.argdict[f"{arg}_dt"]
         dphidx = self.argdict[f"{arg}_dx"]
         nope=np.zeros_like(dphidt)
+        
         T=self.co[:,0]
         X=self.co[:,1]
         Phi=self.argdict[arg]
@@ -181,8 +190,6 @@ class Grid:
         return test
     
     def GenArgDict(self,Coord=None,h=None,argdict=None):
-
-
         for arg in self.argF:
             axeList=arg.split("_")
             if len(axeList)>1:
@@ -198,13 +205,15 @@ class Grid:
     def DerivF(self,co,h=None):
         if h is None:
             h=pct*self.argdict["phi"][co]
+            if h ==0.:
+                h=1e-6
             # print(h)
         F0=self.EvaluateF(self.argdict)
         modifPhi=np.copy(self.argdict["phi"])
         modifPhi[co]=modifPhi[co]+h
         argdictP = {"phi": modifPhi}
         # print(argdictP["phi"][co],self.argdict["phi"][co])
-        
+
         degList=[]
         for arg in self.argF:
             axeList=arg.split("_")
@@ -222,6 +231,7 @@ class Grid:
                 Coord=self.PPV(Coord)
                 # print(deg,Coord)
             # Coord=[i for i in Coord if i not in g.bound]
+            # print(co,Coord)
             CoList[deg]=Coord
         for arg in self.argF:
             axeList=arg.split("_")
@@ -258,19 +268,20 @@ class Grid:
         n=self.co.shape[0]
         signal=[i for i in range(n) if i not in self.bound ]
         n_signal=len(signal)
-        print(n_signal)
+        # print(n_signal)
         J=np.zeros((n_signal,n_signal))
 
         for i,co in enumerate(signal):
             co=np.array([co])
-            print(co)
+            # print(co)
             Deriv=self.DerivF(co,h=h)
-            print(Deriv.shape)
+            # print(Deriv.shape)
             Deriv=self.BoundPurge(Deriv,range(n))
-            J[i,:]=Deriv
+            J[:,i]=Deriv
         return J 
 
     def NewtonBroy(self,h=None,NbEtape=50,Precision=1e-2):
+        # sourcery skip: hoist-statement-from-if
         # if Phi0 is function :
         #     self.SetValueInit(Phi0,"phi")
         # elif Phi0 is np.ndarray:
@@ -286,29 +297,32 @@ class Grid:
         if lin.norm(Fk)<Precision:
             print("Déja bon")
             return self.argdict
-        J=self.JacobF(h=h)
-        print(J)
+        
+        # print(J)
         i=0
         while lin.norm(Fk)> Precision and i<NbEtape:
+            print(f"Etape {i}")
             if i==0:
-                Jinv=lin.inv(J)
-                
-                
-            else:
                 J=self.JacobF(h=h)
                 Jinv=lin.inv(J)
-                # Jinv=Jinv+((DeltaPhi-Jinv@DeltaF)/(DeltaPhi.T@Jinv@DeltaF))@(DeltaPhi.T@Jinv)
+                # print(i)
+                
+            else:
+                # J=self.JacobF(h=h)
+                # Jinv=lin.inv(J)
+                Jinv=Jinv+((DeltaPhi-Jinv@DeltaF)/(DeltaPhi.T@Jinv@DeltaF))@(DeltaPhi.T@Jinv)
+            print("Jacob Done")
             
-            print(f"Etape {i}")
-            print(Jinv)
+            # print(Jinv)
             Phik=self.argdict["phi"]
             reduced_Phik=np.array(self.BoundPurge(Phik,range(self.co.shape[0])))
+            # print(Jinv@Fk)
             reduced_Phik1=-Jinv@Fk+reduced_Phik
             Phik1=np.copy(Phik)
             Phik1[self.signal]=reduced_Phik1
             # print(Phik1)
-            Fk=self.EvaluateF()
-            Fk=np.array(self.BoundPurge(Fk,range(self.co.shape[0])))
+            # Fk=g.EvaluateF()
+            # Fk=np.array(self.BoundPurge(Fk,range(self.co.shape[0])))
             self.argdict={"phi":Phik1}
             self.GenArgDict()
             Fk1=self.EvaluateF()
@@ -318,6 +332,8 @@ class Grid:
             DeltaF=Fk1-Fk
             DeltaF:np.ndarray
             i+=1
+            Fk=Fk1
+            print("\n")
         return self.argdict
             
             
@@ -340,13 +356,16 @@ class Grid:
 plt.figure()
 ax=plt.axes(projection='3d')
 
-NbPoint=np.array([20,20])
-dX0=np.array([0.5,0.5])
-g=Grid(lambda phi_dt,phi: phi_dt-phi,argF=["phi_dt","phi"])
+NbPoint=np.array([40,20])
+dX0=np.array([0.05,0.05])
+g=Grid(lambda phi_dx_dx,phi_dt_dt: phi_dx_dx-phi_dt_dt,time_dir=True)
 g.GeneGridUniEuclid(NbPoint,dX0)
 print(g.bound)
 # print(g.co)
-f=lambda x: np.exp(-(x[1]-7)**2/2/0.5)#*np.cos(x[0]*0.1-x[1]*0.1) #np.real(np.exp(1j*(-x[0]*1+x[1]*1)))#
+# f=lambda x: 1 if x[0] ==0. else 0#np.exp(x[0])#1 if x[0]<=0.6 else 0#np.cos(x[0]*0.1-x[1]*0.1) #np.real(np.exp(1j*(-x[0]*1+x[1]*1)))#
+def f(x):
+    return np.exp(-((x[1]-0.5)/0.1)**2) if x[0]==0 else np.exp(-((x[1]-0.3)/0.1)**2) 
+    
 g.SetValueInit(f,"phi")
 g.TrigGrid()
 g.GenArgDict()
@@ -360,9 +379,10 @@ g.GenArgDict()
 # J=g.JacobF(h=1)
 # print(J)
 
+g.PlotPhi2DScalar(ax,"phi",cmap="winter")
 
 
-print(g.NewtonBroy(h=1e-5,NbEtape=1))
+print(g.NewtonBroy(h=1e-5,NbEtape=10))
 # x=np.array([np.array([0,0]),np.array([5,5])])
 # print(g.Interp("phi",x),f(x))
 # g.Deriv("phi","dt")
@@ -372,21 +392,25 @@ print(g.NewtonBroy(h=1e-5,NbEtape=1))
 # g.DerivRecur("phi","dx_dt_dx_dt")
 # print(g.argdict.keys())
 # # print(g.argdict)
-# g.PlotPhi2DScalar(ax,"phi",cmap="hot")
+plt.figure()
+ax=plt.axes(projection='3d')
+g.PlotPhi2DScalar(ax,"phi",cmap="hot")
+plt.figure()
+ax=plt.axes(projection='3d')
+g.PlotPhi2DScalar(ax,"phi_dx",cmap="hot")
 
 
-
-xrange=dX0[0]*np.linspace(0,NbPoint[0]-1,NbPoint[0])
-print(xrange,g.co[:,0])
-yrange=dX0[1]*np.linspace(0,NbPoint[1]-1,NbPoint[0])
-xmesh,ymesh=np.meshgrid(xrange,yrange)
-mesh_interp=lambda x,y:g.Interp("phi",np.array([[x,y]]))
-Result=np.zeros_like(xmesh)
-for i in range(xmesh.shape[0]):
-    for j in range(xmesh.shape[1]):
-        print(xmesh[i,j],ymesh[i,j])
-        Result[i,j]=mesh_interp(xmesh[i,j],ymesh[i,j])
-ax.plot_surface(xmesh,ymesh,Result,cmap="hot")
+# xrange=dX0[0]*np.linspace(0,NbPoint[0]-1,NbPoint[0])
+# print(xrange,g.co[:,0])
+# yrange=dX0[1]*np.linspace(0,NbPoint[1]-1,NbPoint[0])
+# xmesh,ymesh=np.meshgrid(xrange,yrange)
+# mesh_interp=lambda x,y:g.Interp("phi",np.array([[x,y]]))
+# Result=np.zeros_like(xmesh)
+# for i in range(xmesh.shape[0]):
+#     for j in range(xmesh.shape[1]):
+#         print(xmesh[i,j],ymesh[i,j])
+#         Result[i,j]=mesh_interp(xmesh[i,j],ymesh[i,j])
+# ax.plot_surface(xmesh,ymesh,Result,cmap="hot")
 
 # print(g.EvaluateF())
 
