@@ -6,10 +6,15 @@ import scipy.interpolate as int
 import matplotlib.pyplot as plt
 import scipy.spatial as spa
 import inspect as ins
-
+from multiprocessing import Pool
+from pathos.multiprocessing import ProcessingPool as Pool
+import time as ti
 pct=0.1
 NamesDiff={"dt":0,"dx":1,"dy":2,"dz":3}
 DiffNames={0:"dt",1:"dx",2:"dy",3:"dz"}
+
+
+
 
 class Grid:
     def GeneGridUniEuclid(self,NbPoint,dX0):
@@ -25,7 +30,7 @@ class Grid:
             self.co[i,:]=coor
             xs_t=xs[0]
             xs_x=xs[1]
-            if xs_t%NbPoint[0]<=1  or xs_x%NbPoint[1]<=0 or xs_x%NbPoint[1]>=NbPoint[1]-1:
+            if xs_t%NbPoint[0]<=1  or xs_x%NbPoint[1]<=1 or xs_x%NbPoint[1]>=NbPoint[1]-2:# or xs_t%NbPoint[0]>=NbPoint[0]-2:
                 bound.append(i)
             else:
                 signal.append(i)
@@ -35,10 +40,10 @@ class Grid:
         self.signal=signal
         
 
-
     def __init__(self,F,time_dir=False) -> None:
         self.F=F
-        self.argF=ins.getargspec(F)[0]
+        self.argF=ins.signature(F).parameters.keys()
+        print(self.argF)
         self.time_dir=time_dir
 
     def BoundPurge(self,Array,Coord):
@@ -270,7 +275,6 @@ class Grid:
         n_signal=len(signal)
         # print(n_signal)
         J=np.zeros((n_signal,n_signal))
-
         for i,co in enumerate(signal):
             co=np.array([co])
             # print(co)
@@ -278,7 +282,8 @@ class Grid:
             # print(Deriv.shape)
             Deriv=self.BoundPurge(Deriv,range(n))
             J[:,i]=Deriv
-        return J 
+        # J=np.array([self.BoundPurge(self.DerivF(np.array([co]),h=h),range(n)) for co in signal])
+        return J
 
     def NewtonBroy(self,h=None,NbEtape=50,Precision=1e-2):
         # sourcery skip: hoist-statement-from-if
@@ -303,8 +308,11 @@ class Grid:
         while lin.norm(Fk)> Precision and i<NbEtape:
             print(f"Etape {i}")
             if i==0:
+                print("Before J")
                 J=self.JacobF(h=h)
+                print("After J and Before Inv")
                 Jinv=lin.inv(J)
+                print("After Inv")
                 # print(i)
                 
             else:
@@ -352,19 +360,19 @@ class Grid:
         
 
 
-
+t0=ti.time()
 plt.figure()
 ax=plt.axes(projection='3d')
 
-NbPoint=np.array([40,20])
+NbPoint=np.array([20,20])
 dX0=np.array([0.05,0.05])
-g=Grid(lambda phi_dx_dx,phi_dt_dt: phi_dx_dx-phi_dt_dt,time_dir=True)
+g=Grid(lambda phi_dx_dx,phi_dt_dt,phi: phi_dx_dx-phi_dt_dt+phi,time_dir=True)
 g.GeneGridUniEuclid(NbPoint,dX0)
 print(g.bound)
 # print(g.co)
 # f=lambda x: 1 if x[0] ==0. else 0#np.exp(x[0])#1 if x[0]<=0.6 else 0#np.cos(x[0]*0.1-x[1]*0.1) #np.real(np.exp(1j*(-x[0]*1+x[1]*1)))#
 def f(x):
-    return np.exp(-((x[1]-0.5)/0.1)**2) if x[0]==0 else np.exp(-((x[1]-0.3)/0.1)**2) 
+    return np.exp(-((x[1]-NbPoint[1]*dX0[1]/2)/dX0[1])**2) if x[0]<=0.3 else 0# np.exp(-((x[1]-0.3)/0.1)**2) 
     
 g.SetValueInit(f,"phi")
 g.TrigGrid()
@@ -383,6 +391,7 @@ g.PlotPhi2DScalar(ax,"phi",cmap="winter")
 
 
 print(g.NewtonBroy(h=1e-5,NbEtape=10))
+print(ti.time()-t0)
 # x=np.array([np.array([0,0]),np.array([5,5])])
 # print(g.Interp("phi",x),f(x))
 # g.Deriv("phi","dt")
@@ -395,9 +404,9 @@ print(g.NewtonBroy(h=1e-5,NbEtape=10))
 plt.figure()
 ax=plt.axes(projection='3d')
 g.PlotPhi2DScalar(ax,"phi",cmap="hot")
-plt.figure()
-ax=plt.axes(projection='3d')
-g.PlotPhi2DScalar(ax,"phi_dx",cmap="hot")
+# plt.figure()
+# ax=plt.axes(projection='3d')
+# g.PlotPhi2DScalar(ax,"phi_dx",cmap="hot")
 
 
 # xrange=dX0[0]*np.linspace(0,NbPoint[0]-1,NbPoint[0])
