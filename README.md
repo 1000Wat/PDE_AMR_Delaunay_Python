@@ -1,8 +1,8 @@
 # PDE_AMR_Delaunay_Python
 
-THIS IS WIP, I'am only making this project public to show proof I am working on this for an application. 
+THIS IS WIP, I am only making this project public to show proof I am working on this for an application. 
 
-Just a start of a simple algorithm to solve PDE on a non uniform multidimentsionnal grid by using delaunay tesselation and solving the equations by Newton-Broyden methods, I will describe how it works later on.  
+Just a start of a simple algorithm to solve PDE on a non uniform multidimensionnal grid by using Delaunay tesselation and solving the equations by Newton-Broyden methods, I will describe how it works later on.  
 For now there is only the uniform type of grid and it is capable to solve usual PDE such as wave equations and heat equations. 
 Since it is possible to use a non uniform type of grid, I want to add the possiblity of doing AMR (Adaptative Mesh Refinement). It should be simple since the non-uniformity of the grid is already taken care of.
 
@@ -15,6 +15,7 @@ Important notes: As you may have noticed, the form of the PDEs are not prescribe
 
 ## TO DO
 
+-FIND A WAY TO MAKE THE CALCUATION OF THE JACOBIAN FASTER BY MULTIPROCESSING OR BY USING NUMPY. THIS IS A HUGE BOTTLENECK AT THE MOMENT (30sec of calculation for 800 points)
 -Had ways to visualize results from more than 2D (time + x-axis).
 -Had non-uniform grid such as a disk or an ring.
 -Had Boundary condition more than Dirichlet, such as Neumann or periodic boundary.
